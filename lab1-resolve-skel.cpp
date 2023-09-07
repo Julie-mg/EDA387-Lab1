@@ -75,14 +75,14 @@ int main( int aArgc, char* aArgv[] )
 
 	struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;    /* Allow IPv6 */
+    hints.ai_family = 0;    /* Allow IPv6 */
     hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
     hints.ai_flags = 0;
     hints.ai_protocol = IPPROTO_TCP;          /* Any protocol */
 
 	struct addrinfo* addressInfo; // = (struct addrinfo*)malloc(sizeof(struct addrinfo) * 8);
 
-	int r = getaddrinfo(remoteHostName, NULL, NULL, &addressInfo);
+	int r = getaddrinfo(remoteHostName, NULL, &hints, &addressInfo);
 
 	if (r != 0) {
 		perror(gai_strerror(r));
