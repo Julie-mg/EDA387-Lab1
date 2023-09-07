@@ -75,7 +75,7 @@ int main( int aArgc, char* aArgv[] )
 
 	struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;    /* Allow IPv4 or IPv6 */
+    hints.ai_family = AF_INET;    /* Allow IPv6 */
     hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
     hints.ai_flags = 0;
     hints.ai_protocol = IPPROTO_TCP;          /* Any protocol */
@@ -90,11 +90,25 @@ int main( int aArgc, char* aArgv[] )
 	}
 
 	for (struct addrinfo* rp = addressInfo; rp != NULL; rp = rp->ai_next) {
-		char buf[256];
-		if (inet_ntop(AF_INET, rp->ai_addr->sin->in, buf, sizeof(buf)) != NULL) {
-			printf("%s\n", buf);
-		}
-	}
+        char buf[INET6_ADDRSTRLEN]; // Sufficient for both IPv4 and IPv6
+        void* addr;
+
+        if (rp->ai_family == AF_INET) { // IPv4
+            struct sockaddr_in* ipv4 = (struct sockaddr_in*)rp->ai_addr;
+            addr = &(ipv4->sin_addr);
+        } else { // IPv6
+            struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)rp->ai_addr;
+            addr = &(ipv6->sin6_addr);
+        }
+
+        if (inet_ntop(rp->ai_family, addr, buf, sizeof(buf)) != NULL) {
+            printf("IP Address: %s\n", buf);
+        } else {
+            perror("inet_ntop");
+        }
+    }
+
+    freeaddrinfo(addressInfo);
 
 	// Ok, we're done. Return success.
 	return 0;
