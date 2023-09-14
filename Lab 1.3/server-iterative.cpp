@@ -44,7 +44,7 @@
 // no blocking operations other than select() should occur. (If an blocking
 // operation is attempted, a EAGAIN or EWOULDBLOCK error is raised, probably
 // indicating a bug in the code!)
-#define NONBLOCKING 0
+#define NONBLOCKING 1
 
 
 // Default port of the server. May be overridden by specifying a different
@@ -160,6 +160,19 @@ int main( int argc, char* argv[] )
 
 	if( -1 == listenfd )
 		return 1;
+
+	fd_set rfds;
+	FD_ZERO(&rfds);	//make sure it's empty
+    FD_SET(listenfd, &rfds);
+	int retval = select(1, &rfds, NULL, NULL, NULL);
+
+	if (retval == -1)
+        perror("select()");
+    else if (retval)
+        printf("Data is available now.\n");
+        /* FD_ISSET(0, &rfds) will be true. */
+    else
+        printf("No data within five seconds.\n");
 
 	// loop forever
 	while( 1 )
