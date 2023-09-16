@@ -34,7 +34,7 @@
 #include <vector>
 
 #define error( ... )                                                                               \
-	fprintf( stderr, "%s:%d ERROR - ", __FILE__, __LINE__ );                                   \
+	fprintf( stderr, "%s:%d ERROR - ", __FILE__, __LINE__ );                                       \
 	fprintf( stderr, __VA_ARGS__ );
 
 //--//////////////////////////////////////////////////////////////////////////
