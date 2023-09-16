@@ -33,6 +33,10 @@
 #include <vector>
 #include <algorithm>
 
+#define error(...)                                                           \
+	fprintf( stderr, "%s:%d ERROR - ", __FILE__, __LINE__);                  \
+	fprintf( stderr, __VA_ARGS__ );
+
 //--//////////////////////////////////////////////////////////////////////////
 //--    configurables       ///{{{1///////////////////////////////////////////
 
@@ -161,73 +165,105 @@ int main( int argc, char* argv[] )
 	if( -1 == listenfd )
 		return 1;
 
-	fd_set rfds;
-	FD_ZERO(&rfds);	//make sure it's empty
-    FD_SET(listenfd, &rfds);
-	int retval = select(1, &rfds, NULL, NULL, NULL);
-
-	if (retval == -1)
-        perror("select()");
-    else if (retval)
-        printf("Data is available now.\n");
-        /* FD_ISSET(0, &rfds) will be true. */
-    else
-        printf("No data within five seconds.\n");
+	std::vector<ConnectionData> connections;
 
 	// loop forever
 	while( 1 )
 	{
-		sockaddr_in clientAddr;
-		socklen_t addrSize = sizeof(clientAddr);
+		fd_set rfds;
+		FD_ZERO(&rfds);	//make sure it's empty
+		FD_SET( listenfd, &rfds );
 
-		// accept a single incoming connection
-		int clientfd = accept( listenfd, (sockaddr*)&clientAddr, &addrSize );
+		fd_set wfds;
+		FD_ZERO(&wfds);	//make sure it's empty
 
-		if( -1 == clientfd )
+		int maxFD = listenfd;
+
+		// add all the clients fds to rfds
+		for ( std::size_t i = 0; i < connections.size(); ++i)
 		{
-			perror( "accept() failed" );
-			continue; // attempt to accept a different client.
+			if ( connections[i].state == eConnStateReceiving )
+				FD_SET( connections[i].sock, &rfds );
+			else
+				FD_SET( connections[i].sock, &wfds );
+
+			maxFD = std::max( maxFD, connections[i].sock );
 		}
 
-#			if VERBOSE
-		// print some information about the new client
-		char buff[128];
-		printf( "Connection from %s:%d -> socket %d\n",
-			inet_ntop( AF_INET, &clientAddr.sin_addr, buff, sizeof(buff) ),
-			ntohs(clientAddr.sin_port),
-			clientfd
-		);
-		fflush( stdout );
-#			endif
-
-#			if NONBLOCKING
-		// enable non-blocking sends and receives on this socket
-		if( !set_socket_nonblocking( clientfd ) )
+		if ( select( maxFD + 1, &rfds, &wfds, NULL, NULL ) == -1 )
+		{
+			error("%s\n", std::strerror(errno));
 			continue;
-#			endif
-
-		// initialize connection data
-		ConnectionData connData;
-		memset( &connData, 0, sizeof(connData) );
-
-		connData.sock = clientfd;
-		connData.state = eConnStateReceiving;
-
-		// Repeatedly receive and re-send data from the connection. When
-		// the connection closes, process_client_*() will return false, no
-		// further processing is done.
-		bool processFurther = true;
-		while( processFurther )
-		{
-			while( processFurther && connData.state == eConnStateReceiving )
-				processFurther = process_client_recv( connData );
-
-			while( processFurther && connData.state == eConnStateSending )
-				processFurther = process_client_send( connData );
 		}
 
-		// done - close connection
-		close( connData.sock );
+		if ( FD_ISSET( listenfd, &rfds ) )
+		{
+			sockaddr_in clientAddr;
+			socklen_t addrSize = sizeof(clientAddr);
+
+			// accept a single incoming connection
+			int clientfd = accept( listenfd, (sockaddr*)&clientAddr, &addrSize );
+
+			if( -1 == clientfd )
+			{
+				perror( "accept() failed" );
+				continue; // attempt to accept a different client.
+			}
+
+	#			if VERBOSE
+			// print some information about the new client
+			char buff[128];
+			printf( "Connection from %s:%d -> socket %d\n",
+				inet_ntop( AF_INET, &clientAddr.sin_addr, buff, sizeof(buff) ),
+				ntohs(clientAddr.sin_port),
+				clientfd
+			);
+			fflush( stdout );
+	#			endif
+
+			// enable non-blocking sends and receives on this socket
+			if( !set_socket_nonblocking( clientfd ) )
+				continue;
+
+			// initialize connection data
+			ConnectionData connData;
+			memset( &connData, 0, sizeof(connData) );
+			connData.sock = clientfd;
+			connData.state = eConnStateReceiving;
+
+			connections.push_back(connData);
+		}
+
+		for ( size_t i = 0; i < connections.size(); ++i )
+		{
+			ConnectionData& connection = connections[i];
+			int clientfd = connection.sock;
+
+			if ( connection.state == eConnStateReceiving )
+			{
+				if ( FD_ISSET( clientfd, &rfds ))
+				{
+					if ( !process_client_recv( connection ) )
+					{
+						close(clientfd);
+						connections.erase( connections.cbegin() + i );
+						--i;
+					}
+				}
+			}
+			else
+			{
+				if ( FD_ISSET( clientfd, &wfds ))
+				{
+					if ( !process_client_send( connection ) )
+					{
+						close(clientfd);
+						connections.erase( connections.cbegin() + i );
+						--i;
+					}
+				}
+			}
+		}
 	}
 
 	// The program will never reach this part, but for demonstration purposes,
