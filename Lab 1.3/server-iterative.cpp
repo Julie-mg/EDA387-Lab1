@@ -168,9 +168,10 @@ int main( int argc, char *argv[] )
 	// loop forever
 	while( 1 )
 	{
+#if NONBLOCKING
 		fd_set rfds;
-		FD_ZERO( &rfds ); // make sure it's empty
-		FD_SET( listenfd, &rfds );	//put what is in listenfd in the rfds set
+		FD_ZERO( &rfds );          // make sure it's empty
+		FD_SET( listenfd, &rfds ); // put what is in listenfd in the rfds set
 
 		fd_set wfds;
 		FD_ZERO( &wfds ); // make sure it's empty
@@ -185,17 +186,19 @@ int main( int argc, char *argv[] )
 			else
 				FD_SET( connections[i].sock, &wfds );
 
-			maxFD = std::max( maxFD, connections[i].sock );		// put the highest value of the sockets in maxFD
+			maxFD = std::max(
+			    maxFD, connections[i].sock ); // put the highest value of the sockets in maxFD
 		}
 
-		if( select( maxFD + 1, &rfds, &wfds, NULL, NULL ) == -1 )	// wait until it reaches the socket of the maxFD+1 number
+		if( select( maxFD + 1, &rfds, &wfds, NULL, NULL ) ==
+		    -1 ) // wait until it reaches the socket of the maxFD+1 number
 		{
 			error( "%s\n", strerror( errno ) );
 			continue;
 		}
 
 		// look if one client wants to start a connection
-		if( FD_ISSET( listenfd, &rfds ) )	
+		if( FD_ISSET( listenfd, &rfds ) )
 		{
 			sockaddr_in clientAddr;
 			socklen_t addrSize = sizeof( clientAddr );
@@ -262,6 +265,51 @@ int main( int argc, char *argv[] )
 				}
 			}
 		}
+#else
+		sockaddr_in clientAddr;
+		socklen_t addrSize = sizeof( clientAddr );
+
+		// accept a single incoming connection
+		int clientfd = accept( listenfd, (sockaddr *)&clientAddr, &addrSize );
+
+		if( -1 == clientfd )
+		{
+			perror( "accept() failed" );
+			continue; // attempt to accept a different client.
+		}
+
+#if VERBOSE
+		// print some information about the new client
+		char buff[128];
+		printf( "Connection from %s:%d -> socket %d\n",
+		        inet_ntop( AF_INET, &clientAddr.sin_addr, buff, sizeof( buff ) ),
+		        ntohs( clientAddr.sin_port ), clientfd );
+		fflush( stdout );
+#endif
+
+		// initialize connection data
+		ConnectionData connData;
+		memset( &connData, 0, sizeof( connData ) );
+
+		connData.sock = clientfd;
+		connData.state = eConnStateReceiving;
+
+		// Repeatedly receive and re-send data from the connection. When
+		// the connection closes, process_client_*() will return false, no
+		// further processing is done.
+		bool processFurther = true;
+		while( processFurther )
+		{
+			while( processFurther && connData.state == eConnStateReceiving )
+				processFurther = process_client_recv( connData );
+
+			while( processFurther && connData.state == eConnStateSending )
+				processFurther = process_client_send( connData );
+		}
+
+		// done - close connection
+		close( connData.sock );
+#endif
 	}
 
 	// The program will never reach this part, but for demonstration purposes,
