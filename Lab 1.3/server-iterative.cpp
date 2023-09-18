@@ -170,7 +170,7 @@ int main( int argc, char *argv[] )
 	{
 		fd_set rfds;
 		FD_ZERO( &rfds ); // make sure it's empty
-		FD_SET( listenfd, &rfds );
+		FD_SET( listenfd, &rfds );	//put what is in listenfd in the rfds set
 
 		fd_set wfds;
 		FD_ZERO( &wfds ); // make sure it's empty
@@ -185,16 +185,17 @@ int main( int argc, char *argv[] )
 			else
 				FD_SET( connections[i].sock, &wfds );
 
-			maxFD = std::max( maxFD, connections[i].sock );
+			maxFD = std::max( maxFD, connections[i].sock );		// put the highest value of the sockets in maxFD
 		}
 
-		if( select( maxFD + 1, &rfds, &wfds, NULL, NULL ) == -1 )
+		if( select( maxFD + 1, &rfds, &wfds, NULL, NULL ) == -1 )	// wait until it reaches the socket of the maxFD+1 number
 		{
-			error( "%s\n", std::strerror( errno ) );
+			error( "%s\n", strerror( errno ) );
 			continue;
 		}
 
-		if( FD_ISSET( listenfd, &rfds ) )
+		// look if one client wants to start a connection
+		if( FD_ISSET( listenfd, &rfds ) )	
 		{
 			sockaddr_in clientAddr;
 			socklen_t addrSize = sizeof( clientAddr );
@@ -230,6 +231,7 @@ int main( int argc, char *argv[] )
 			connections.push_back( connData );
 		}
 
+		// loop over the vectors of connections to handle each request
 		for( size_t i = 0; i < connections.size(); ++i )
 		{
 			ConnectionData &connection = connections[i];
